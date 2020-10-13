@@ -13,7 +13,7 @@
 #include <unistd.h>
 
 #define MAXTIMINGS 85
-int SENSOR_PIN = 4;
+int GPIO_PIN = 4;
 
 /*
 * digitalRead() and friends from wiringpi are defined as returning a value < 256.
@@ -22,7 +22,7 @@ int SENSOR_PIN = 4;
 */
 static uint8_t readPin(const int sensorPin) {
   int value = digitalRead(sensorPin);
-  
+
   if (value > 255 || value < 0) {
     printf("Invalid data from wiringPi library\n");
     exit(EXIT_FAILURE);
@@ -31,23 +31,38 @@ static uint8_t readPin(const int sensorPin) {
   return (uint8_t)value;
 }
 
+static void sendStartAndWaitForResponse () {
+  // Set write mode
+  pinMode(GPIO_PIN, OUTPUT);
+
+  // is this really neccecary???
+  digitalWrite(DHTPIN, HIGH);
+  delay(10);
+
+  // Pull low and wait for 18ms
+  digitalWrite(GPIO_PIN, LOW);
+  delay(18);
+
+  // Pull high and wait 20-40us
+  digitalWrite(GPIO_PIN, HIGH);
+  delayMicroseconds(40);
+
+  // Switch to read mode
+  pinMode(GPIO_PIN, INPUT);
+}
+
 static int readData() {
   uint8_t lastState = HIGH;
   uint8_t j = 0;
   int data[5] = {0,0,0,0,0};
 
-  pinMode(SENSOR_PIN, OUTPUT);
-  digitalWrite(SENSOR_PIN, LOW);
-  delay(18);
-  digitalWrite(SENSOR_PIN, HIGH);
-  delayMicroseconds(40);
-  pinMode(SENSOR_PIN, INPUT);
+  sendStartAndWaitForResponse();
 
   // detect change and read data
   for (uint8_t i=0; i< MAXTIMINGS; i++) {
     uint8_t counter = 0;
 
-    while (readPin(SENSOR_PIN) == lastState) {
+    while (readPin(GPIO_PIN) == lastState) {
       counter++;
       delayMicroseconds(1);
 
@@ -56,13 +71,14 @@ static int readData() {
       }
     }
 
-    lastState = readPin(SENSOR_PIN);
+    lastState = readPin(GPIO_PIN);
 
     if (counter == 255) {
-		break;
-	}
+        break;
+    }
 
-    // ignore first 3 transitions
+    // First three transitions is the sensor replying "READY TO SEND DATA"
+    // Ignore them...
     if ((i >= 4) && (i%2 == 0)) {
       // shove each bit into the storage bytes
       data[j/8] <<= 1;
@@ -95,14 +111,14 @@ static int readData() {
   }
 }
 
-int main (int argc, char *argv[]) {
+int main(int argc, char *argv[]) {
   int tries = 100;
 
   if (argc < 2) {
     printf("usage: %s <pin> (<tries>)\ndescription: pin is the wiringPi pin number\nusing 2 (GPIO 27)\nOptional: tries is the number of times to try to obtain a read (default 100)", argv[0]);
   }
   else {
-    SENSOR_PIN = atoi(argv[1]);
+    GPIO_PIN = atoi(argv[1]);
   }
 
   if (argc == 3) {
@@ -124,7 +140,7 @@ int main (int argc, char *argv[]) {
   }
 
   while (readData() == 0 && tries--)  {
-     delay(500); // wait 0.5 sec before retry
+     delay(1000); // wait 1 sec before retry
   }
 
   return 0;
